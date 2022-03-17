@@ -7,6 +7,8 @@ of your WiFi to allow phones to easily connect
 by Siddharth Dushantha
 """
 
+import ctypes
+import locale
 import pathlib
 import sys
 import subprocess
@@ -17,7 +19,8 @@ import os
 import qrcode
 import colorama
 
-__version__ = "1.1.1"
+
+__version__ = "m.1.0_1.1.1"
 
 
 def run_command(command: str) -> str:
@@ -27,7 +30,8 @@ def run_command(command: str) -> str:
     env = os.environ.copy()
     env["LANG"] = "C"
     output, _ = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=True, env=env).communicate()
-    return output.decode("utf-8").rstrip("\r\n")
+    # return output.decode("utf-8").rstrip("\r\n")
+    return output.decode("unicode_escape").rstrip("\r\n")
 
 
 def print_error(text) -> None:
@@ -85,8 +89,20 @@ def get_password(ssid: str) -> str:
             password = run_command(f"nmcli -s -g 802-11-wireless-security.psk connection show '{ssid}'")
 
     elif sys.platform == "win32":
-        password = run_command(f"netsh wlan show profile name=\"{ssid}\" key=clear | findstr Key")
-        password = re.findall(r"Key Content\s+:\s(.*)", password)[0]
+        dll_handle = ctypes.windll.kernel32
+        sys_lang = hex(dll_handle.GetSystemDefaultUILanguage())
+        # print(sys_lang, type(sys_lang))
+        # sys_lang = 0x804 为中文
+        # loc_lang = locale.getdefaultlocale()
+        # loc_lang = ('zh_CN', 'cp936')
+
+        if sys_lang == "0x804":
+            password = run_command(f"netsh wlan show profile name=\"{ssid}\" key=clear | findstr 关键内容")
+            password = password.split(":")[1:]
+            password = ":".join(password).strip()
+        else:
+            password = run_command(f"netsh wlan show profile name=\"{ssid}\" key=clear | findstr Key")
+            password = re.findall(r"Key Content\s+:\s(.*)", password)[0]
 
     if password == "":
         print_error("Could not find password")
@@ -114,13 +130,10 @@ def generate_qr_code(ssid: str, password: str, path: str, show_qr: bool) -> None
         colorama.init()
         qr.make()
         qr.print_tty()
-
     if path:
-        file_name = ssid.replace(" ", "_") + ".png"
-
+        file_name = ssid.replace(" ", "_").replace("\r", "") + ".png"
         if path == "STORE_LOCALLY":
             path = file_name
-
         try:
             img = qr.make_image()
             img.save(path)
